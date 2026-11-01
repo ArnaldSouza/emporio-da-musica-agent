@@ -18,7 +18,23 @@ To be completed.
 
 ## 4. Technical decisions and justification
 
-To be completed.
+Agent approach, model and provider, interface and conversation history: to be completed.
+
+### 4.1 Data handling
+
+The CSV files are read with pandas and never modified on disk. All preparation happens in memory when the agent starts (`tools.py`).
+
+- **Products:** joined with categories and with the active promotion (`is_active == 1`; if a product ever had two, the highest discount would be used). Availability is derived from status and stock, with status prevailing. Descriptions are dropped (see Assumptions), `specs` JSON is parsed, and a normalized name (lowercase, no accents) allows accent-insensitive search.
+- **Orders:** joined with the customer's contact data and a readable list of items; dates are parsed and status and payment codes are translated into Portuguese.
+- **Business rules:** every rule with an objective criterion in the manual (PIX discount, promotional price, installments, combined payments, Campo Grande shipping, return window, defect coverage, opening hours) is a pure function in `business_rules.py`, never computed by the LLM. Money uses `Decimal` with half-up rounding to avoid one-cent errors (R$ 599.90 with 5% off is R$ 569.91, not R$ 569.90).
+- **Tests:** rules and tools are covered by unit tests in `tests/`, which run without calling the model.
+
+### 4.2 Policy retrieval
+
+The manual (8 pages, about 1,700 words, 10 numbered sections) is extracted with `pypdf` in layout mode, cleaned (page headers and footers removed, contacts standardized) and split into its numbered sections. A section starts only at the next expected number, so numbered steps inside a section are not taken as titles. The policy tool returns the section of a fixed topic: about the store, opening hours, payment, returns and exchanges, shipping, promotions, warranty or privacy. Sections 7 (internal service guidelines) and 10 (final provisions) are not exposed to customers; section 7 guides the system prompt.
+
+- **Why not embeddings (vector RAG):** the document is short and already divided by topic; a vector store would add infrastructure and dependencies without better retrieval.
+- **Why not the whole manual in the prompt:** simpler, but the decision of when to consult the policies, which the challenge evaluates, would become invisible, and every request would carry thousands of extra tokens.
 
 ## 5. Assumptions
 
@@ -51,7 +67,7 @@ The challenge asks to assume a reasonable interpretation whenever something is a
 
 ### Shipping
 
-- Only the Campo Grande rule is computed (free above R$ 500, otherwise R$ 35). For other cities the price depends on ZIP code, weight and dimensions (Correios or Jadlog), so the agent hands off to the team.
+- Only the Campo Grande rule is computed: free above R$ 500 and R$ 35 otherwise. The manual says "above" and "below" R$ 500 but not "exactly", so R$ 500.00 pays R$ 35 and shipping is free from R$ 500.01. For other cities the price depends on ZIP code, weight and dimensions (Correios or Jadlog), so the agent hands off to the team.
 
 ### Returns and warranty
 
@@ -70,21 +86,21 @@ The challenge asks to assume a reasonable interpretation whenever something is a
 
 ### 5.1 Inconsistencies found in the provided material
 
-| Inconsistency                                                                                                                                                 | How the agent handles it                                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Manual lists two WhatsApp numbers: (67) 3341-4444 (section 1.2) and (67) 3321-4500 (section 7).                                                               | Uses 3341-4444, which also appears on the cover.                                                  |
-| Manual spells the e-mail as `emporiodamusica` and `empóriodamusica` (with an accent).                                                                         | Uses the version without the accent.                                                              |
-| Manual section 3 says "up to 12x, minimum installment R$ 100"; section 3.1 defines three tiers.                                                               | Follows section 3.1 (more specific).                                                              |
-| Defect exchange (30 days from purchase, 4.2) overlaps with legal warranty (90 days from receipt, 8.1).                                                        | Interpretation described in the Assumptions above.                                                |
-| Status contradicts stock: product 130 is `coming_soon` with stock 2 (and appears in orders); product 136 is `discontinued` with stock 13.                     | Status prevails over stock.                                                                       |
-| Products 135–144: description contradicts name and specs (e.g. "Music Man Bass 1X" described as a "Fender Jazz Bass").                                        | Descriptions are not used.                                                                        |
-| Promotions have no dates; some types and percentages differ from the manual (e.g. a 10% Black Friday, while the manual says 15–30%).                          | Only `is_active` decides; percentages are used as stored.                                         |
-| Order totals differ from the sum of items for orders 3 and 20; PIX orders show no 5% discount; no total includes shipping.                                    | Stored totals are shown as they are; business rules apply to new quotes only.                     |
-| Orders 9, 16 and 18 have installments below the manual's minimum.                                                                                             | Historical orders are not corrected.                                                              |
-| Campo Grande orders have Correios tracking codes and 10–15 day estimates, while the manual says local delivery is by motorcycle courier in 1–3 business days. | Order data is reported as stored.                                                                 |
-| Customers 11 and 43 share the same e-mail.                                                                                                                    | Verification is done against the customer of the requested order, so the duplicate has no effect. |
-| Categories 6, 7 and 8 (wind instruments, orchestral strings) have no products, although the manual mentions them.                                             | The agent says they are not available at the moment and does not invent products.                 |
-| The manual excludes "final sale" clearance items from exchanges (4.4), but the data has no such flag.                                                         | The agent cannot check it and hands off to the team.                                              |
+| Inconsistency | How the agent handles it |
+| --- | --- |
+| Manual lists two WhatsApp numbers: (67) 3341-4444 (section 1.2) and (67) 3321-4500 (section 7). | Uses 3341-4444, which also appears on the cover. |
+| Manual spells the e-mail as `emporiodamusica` and `empóriodamusica` (with an accent). | Uses the version without the accent. |
+| Manual section 3 says "up to 12x, minimum installment R$ 100"; section 3.1 defines three tiers. | Follows section 3.1 (more specific). |
+| Defect exchange (30 days from purchase, 4.2) overlaps with legal warranty (90 days from receipt, 8.1). | Interpretation described in the Assumptions above. |
+| Status contradicts stock: product 130 is `coming_soon` with stock 2 (and appears in orders); product 136 is `discontinued` with stock 13. | Status prevails over stock. |
+| Products 135–144: description contradicts name and specs (e.g. "Music Man Bass 1X" described as a "Fender Jazz Bass"). | Descriptions are not used. |
+| Promotions have no dates; some types and percentages differ from the manual (e.g. a 10% Black Friday, while the manual says 15–30%). | Only `is_active` decides; percentages are used as stored. |
+| Order totals differ from the sum of items for orders 3 and 20; PIX orders show no 5% discount; no total includes shipping. | Stored totals are shown as they are; business rules apply to new quotes only. |
+| Orders 9, 16 and 18 have installments below the manual's minimum. | Historical orders are not corrected. |
+| Campo Grande orders have Correios tracking codes and 10–15 day estimates, while the manual says local delivery is by motorcycle courier in 1–3 business days. | Order data is reported as stored. |
+| Customers 11 and 43 share the same e-mail. | Verification is done against the customer of the requested order, so the duplicate has no effect. |
+| Categories 6, 7 and 8 (wind instruments, orchestral strings) have no products, although the manual mentions them. | The agent says they are not available at the moment and does not invent products. |
+| The manual excludes "final sale" clearance items from exchanges (4.4), but the data has no such flag. | The agent cannot check it and hands off to the team. |
 
 ## 6. Example conversations
 
