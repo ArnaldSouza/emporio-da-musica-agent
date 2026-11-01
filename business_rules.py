@@ -3,6 +3,7 @@
 Money values are rounded to cents with commercial rounding (half up).
 """
 
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 PIX_DISCOUNT_PERCENT = 5  # Manual 3: PIX payments get 5% off the list price
@@ -11,6 +12,11 @@ MAX_INSTALLMENTS = 12
 # Manual 3.1: (highest number of installments in the tier, minimum installment value in BRL)
 INSTALLMENT_TIERS = [(3, 50.0), (6, 80.0), (12, 100.0)]
 COMBINED_PAYMENT_THRESHOLD = 2000.0  # Manual 3.1: payment methods can be combined above this total
+METRO_CITY = "Campo Grande"
+FREE_SHIPPING_THRESHOLD = 500.0  # Manual 5.1: free shipping above this total
+METRO_SHIPPING_FEE = 35.0  # Manual 5.1: fixed fee below the threshold
+RETURN_WINDOW_DAYS = 7  # Manual 4.1 and 4.3: calendar days after receipt
+
 
 def apply_discount(price: float, discount_percent: float) -> float:
     """Return the price after a percentage discount, rounded to cents."""
@@ -53,3 +59,23 @@ def max_installments(total: float) -> int:
 def can_combine_payments(total: float) -> bool:
     """Return True if the total allows combining payment methods (manual 3.1)."""
     return total > COMBINED_PAYMENT_THRESHOLD
+
+
+def shipping_fee(order_total: float, city: str) -> float | None:
+    """Return the shipping fee for Campo Grande, or None when the team must quote it.
+
+    Outside Campo Grande the price depends on ZIP code, weight and dimensions (manual 5.2).
+    """
+    if city.strip().casefold() != METRO_CITY.casefold():
+        return None
+    if order_total > FREE_SHIPPING_THRESHOLD:
+        return 0.0
+    return METRO_SHIPPING_FEE
+
+
+def is_within_return_window(received_date: date, reference_date: date) -> bool:
+    """Return True if a return or preference exchange is still allowed (manual 4.1 and 4.3)."""
+    days_since_receipt = (reference_date - received_date).days
+    if days_since_receipt < 0:
+        raise ValueError("Reference date is before the receipt date")
+    return days_since_receipt <= RETURN_WINDOW_DAYS
