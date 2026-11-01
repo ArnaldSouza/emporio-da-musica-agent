@@ -154,3 +154,16 @@ def test_store_hours_use_campo_grande_time_for_brasilia_moments():
 def test_store_open_rejects_moment_without_time_zone():
     with pytest.raises(ValueError):
         is_store_open(datetime(2026, 3, 25, 10, 0))
+
+
+def test_installment_value_divides_total():
+    assert installment_value(2199.00, 12) == 183.25
+
+
+def test_installment_value_rounds_half_up_to_cents():
+    assert installment_value(100.01, 2) == 50.01
+
+
+def test_installment_value_rejects_zero_installments():
+    with pytest.raises(ValueError):
+        installment_value(100.00, 0)
