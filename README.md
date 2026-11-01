@@ -60,7 +60,7 @@ The challenge asks to assume a reasonable interpretation whenever something is a
 
 ### Contacts and hand-off
 
-- The agent uses phone/WhatsApp **(67) 3341-4444** and **contato@emporiodamusica.com.br** (see 5.1).
+- The agent uses phone/WhatsApp **(67) 3341-4444** and `contato@emporiodamusica.com.br` (see 5.1).
 - Actions the agent cannot perform (complaints, partner stores, manager decisions, freight quotes outside Campo Grande) are handed off to the human team with the official contacts.
 
 ### Persona and repository
