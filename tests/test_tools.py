@@ -9,6 +9,7 @@ from tools import (
     normalize_text,
     product_availability,
     read_table,
+    search_products,
 )
 
 
@@ -72,3 +73,48 @@ def test_load_products_adds_category_and_availability():
 
 def test_load_products_parses_specs_as_dict():
     assert isinstance(get_product_row(load_products(), 95)["specs"], dict)
+
+
+PRODUCTS = load_products()
+
+
+def found_ids(result):
+    """Return the product ids in a search result (test helper)."""
+    return [product["product_id"] for product in result["products"]]
+
+
+def test_search_by_category_and_max_price_returns_only_matching_available_products():
+    result = search_products(PRODUCTS, category="Violões", max_price=1000)
+    assert result["total_found"] > 0
+    for product in result["products"]:
+        assert product["category"] == "Violões"
+        assert product["price_brl"] <= 1000
+        assert product["availability"] == AVAILABLE
+
+
+def test_search_results_are_sorted_by_price():
+    prices = [product["price_brl"] for product in search_products(PRODUCTS, category="Violões")["products"]]
+    assert prices == sorted(prices)
+
+
+def test_search_excludes_unavailable_products_by_default():
+    ids = found_ids(search_products(PRODUCTS, category="Violões", max_price=1000))
+    assert 96 not in ids  # out of stock
+    assert 113 not in ids  # discontinued
+
+
+def test_search_by_name_ignores_case_and_accents():
+    assert found_ids(search_products(PRODUCTS, query="TAKAMINE gd20")) == [95]
+    assert 130 in found_ids(search_products(PRODUCTS, query="baritono", only_available=False))
+
+
+def test_search_max_price_uses_promotional_price():
+    result = search_products(PRODUCTS, category="Ukuleles", max_price=450)
+    ohana = next(product for product in result["products"] if product["product_id"] == 121)
+    assert ohana["price_brl"] == 439.20
+    assert ohana["original_price_brl"] == 549.00
+    assert ohana["discount_percent"] == 20
+
+
+def test_search_without_matches_returns_empty_result():
+    assert search_products(PRODUCTS, query="saxofone") == {"total_found": 0, "products": []}

@@ -3,8 +3,10 @@
 import unicodedata
 from pathlib import Path
 
-import pandas as pd
 import json
+import pandas as pd
+from business_rules import apply_discount
+
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 CSV_PREFIX = "desafio_tecnico_ai_eng - "  # original file names are kept unchanged
@@ -17,6 +19,8 @@ AVAILABLE = "disponível"
 OUT_OF_STOCK = "esgotado"
 COMING_SOON = "em breve"
 DISCONTINUED = "fora do catálogo"
+MAX_SEARCH_RESULTS = 10  # keeps the tool answer short for the model
+
 
 def read_table(name: str) -> pd.DataFrame:
     """Read one of the provided CSV files by table name, e.g. "products"."""
@@ -69,3 +73,46 @@ def load_products() -> pd.DataFrame:
     products["specs"] = products["specs"].map(json.loads)
     products["search_text"] = (products["name"] + " " + products["category"]).map(normalize_text)
     return products
+
+
+def _product_summary(product: pd.Series) -> dict:
+    """Return the main fields of a product, with the promotional price when there is one."""
+    summary = {
+        "product_id": int(product["product_id"]),
+        "name": product["name"],
+        "category": product["category"],
+        "availability": product["availability"],
+        "price_brl": float(product["price_brl"]),
+    }
+    discount = float(product["discount_percent"])
+    if discount > 0:
+        # Manual 6.2: promotional prices are shown with the original price and the discount
+        summary["original_price_brl"] = summary["price_brl"]
+        summary["price_brl"] = apply_discount(summary["original_price_brl"], discount)
+        summary["discount_percent"] = int(discount)
+        summary["promotion_name"] = product["promotion_name"]
+    return summary
+
+
+def search_products(
+    products: pd.DataFrame,
+    query: str = "",
+    category: str = "",
+    max_price: float | None = None,
+    only_available: bool = True,
+) -> dict:
+    """Search the catalog by words in the name, category and maximum price, cheapest first."""
+    results = products
+    if category:
+        results = results[results["category"].map(normalize_text) == normalize_text(category)]
+    for word in normalize_text(query).split():
+        results = results[results["search_text"].str.contains(word, regex=False)]
+    if only_available:
+        results = results[results["availability"] == AVAILABLE]
+
+    summaries = [_product_summary(product) for _, product in results.iterrows()]
+    if max_price is not None:
+        # Compared with the current price, so promotions are taken into account
+        summaries = [summary for summary in summaries if summary["price_brl"] <= max_price]
+    summaries.sort(key=lambda summary: summary["price_brl"])
+    return {"total_found": len(summaries), "products": summaries[:MAX_SEARCH_RESULTS]}
