@@ -5,6 +5,7 @@ from tools import (
     COMING_SOON,
     DISCONTINUED,
     OUT_OF_STOCK,
+    get_product_details,
     load_products,
     normalize_text,
     product_availability,
@@ -118,3 +119,25 @@ def test_search_max_price_uses_promotional_price():
 
 def test_search_without_matches_returns_empty_result():
     assert search_products(PRODUCTS, query="saxofone") == {"total_found": 0, "products": []}
+
+
+def test_product_details_without_promotion_include_payment_conditions():
+    takamine = get_product_details(PRODUCTS, 95)
+    assert takamine["price_brl"] == 2199.00
+    assert takamine["pix_price_brl"] == 2089.05
+    assert takamine["max_installments"] == 12
+    assert takamine["installment_value_brl"] == 183.25
+    assert takamine["can_combine_payments"] is True
+    assert isinstance(takamine["specs"], dict)
+
+
+def test_product_details_with_promotion_have_no_extra_pix_discount():
+    ohana = get_product_details(PRODUCTS, 121)
+    assert ohana["price_brl"] == 439.20
+    assert ohana["pix_price_brl"] == 439.20
+    assert ohana["max_installments"] == 5
+    assert ohana["installment_value_brl"] == 87.84
+
+
+def test_product_details_unknown_id_returns_error():
+    assert "error" in get_product_details(PRODUCTS, 9999)

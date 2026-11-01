@@ -5,7 +5,13 @@ from pathlib import Path
 
 import json
 import pandas as pd
-from business_rules import apply_discount
+from business_rules import (
+    apply_discount,
+    can_combine_payments,
+    installment_value,
+    max_installments,
+    pix_price,
+)
 
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -116,3 +122,20 @@ def search_products(
         summaries = [summary for summary in summaries if summary["price_brl"] <= max_price]
     summaries.sort(key=lambda summary: summary["price_brl"])
     return {"total_found": len(summaries), "products": summaries[:MAX_SEARCH_RESULTS]}
+
+
+def get_product_details(products: pd.DataFrame, product_id: int) -> dict:
+    """Return price, payment conditions and specs of one product."""
+    matches = products[products["product_id"] == product_id]
+    if matches.empty:
+        return {"error": f"No product found with id {product_id}"}
+    product = matches.iloc[0]
+    details = _product_summary(product)
+    price = details["price_brl"]
+    installments = max_installments(price)
+    details["pix_price_brl"] = pix_price(price, is_promotional="discount_percent" in details)
+    details["max_installments"] = installments
+    details["installment_value_brl"] = installment_value(price, installments)
+    details["can_combine_payments"] = can_combine_payments(price)
+    details["specs"] = product["specs"]
+    return details
