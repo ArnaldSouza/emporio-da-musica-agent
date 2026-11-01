@@ -4,14 +4,27 @@ from datetime import date
 
 import pytest
 
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+import pytest
+
 from business_rules import (
+    CAMPO_GRANDE_TZ,
+    LEGAL_WARRANTY,
+    MANUFACTURER_WARRANTY,
+    STORE_EXCHANGE,
     apply_discount,
     can_combine_payments,
+    defect_coverage,
+    is_store_open,
     is_within_return_window,
     max_installments,
     pix_price,
     shipping_fee,
 )
+
+REFERENCE_DATE = date(2026, 3, 25)
 
 
 def test_apply_discount_rounds_half_up_to_cents():
@@ -96,3 +109,47 @@ def test_return_window_closes_after_seventh_day():
 def test_return_window_rejects_reference_before_receipt():
     with pytest.raises(ValueError):
         is_within_return_window(date(2026, 3, 26), date(2026, 3, 25))
+
+
+def test_defect_within_thirty_days_of_purchase_is_store_exchange():
+    assert defect_coverage(date(2026, 2, 23), date(2026, 2, 27), REFERENCE_DATE) == STORE_EXCHANGE
+
+
+def test_defect_after_thirty_days_within_ninety_of_receipt_is_legal_warranty():
+    assert defect_coverage(date(2026, 1, 5), date(2026, 1, 18), REFERENCE_DATE) == LEGAL_WARRANTY
+
+
+def test_defect_after_ninety_days_of_receipt_is_manufacturer_warranty():
+    assert defect_coverage(date(2025, 10, 15), date(2025, 10, 25), REFERENCE_DATE) == MANUFACTURER_WARRANTY
+
+
+def test_defect_rejects_reference_before_purchase():
+    with pytest.raises(ValueError):
+        defect_coverage(date(2026, 3, 26), date(2026, 3, 28), REFERENCE_DATE)
+
+
+def test_store_is_open_on_weekday_business_hours():
+    assert is_store_open(datetime(2026, 3, 25, 10, 0, tzinfo=CAMPO_GRANDE_TZ)) is True
+
+
+def test_store_closes_at_closing_time():
+    assert is_store_open(datetime(2026, 3, 25, 18, 0, tzinfo=CAMPO_GRANDE_TZ)) is False
+
+
+def test_store_closes_at_one_pm_on_saturday():
+    assert is_store_open(datetime(2026, 3, 28, 12, 59, tzinfo=CAMPO_GRANDE_TZ)) is True
+    assert is_store_open(datetime(2026, 3, 28, 13, 0, tzinfo=CAMPO_GRANDE_TZ)) is False
+
+
+def test_store_is_closed_on_sunday():
+    assert is_store_open(datetime(2026, 3, 29, 10, 0, tzinfo=CAMPO_GRANDE_TZ)) is False
+
+
+def test_store_hours_use_campo_grande_time_for_brasilia_moments():
+    brasilia_9_30 = datetime(2026, 3, 25, 9, 30, tzinfo=ZoneInfo("America/Sao_Paulo"))
+    assert is_store_open(brasilia_9_30) is False  # 08:30 in Campo Grande
+
+
+def test_store_open_rejects_moment_without_time_zone():
+    with pytest.raises(ValueError):
+        is_store_open(datetime(2026, 3, 25, 10, 0))
