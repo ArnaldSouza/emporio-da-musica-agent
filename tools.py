@@ -4,11 +4,14 @@ import unicodedata
 from pathlib import Path
 
 import json
+from datetime import date
 import pandas as pd
 from business_rules import (
     apply_discount,
     can_combine_payments,
+    defect_coverage,
     installment_value,
+    is_within_return_window,
     max_installments,
     pix_price,
 )
@@ -26,6 +29,18 @@ OUT_OF_STOCK = "esgotado"
 COMING_SOON = "em breve"
 DISCONTINUED = "fora do catálogo"
 MAX_SEARCH_RESULTS = 10  # keeps the tool answer short for the model
+DELIVERED_STATUS = "delivered"
+ORDER_STATUS_LABELS = {
+    "pending": "pendente",
+    "confirmed": "confirmado",
+    "shipped": "enviado",
+    "delivered": "entregue",
+    "cancelled": "cancelado",
+}
+PAYMENT_LABELS = {"pix": "PIX", "debit": "cartão de débito", "boleto": "boleto bancário"}
+CREDIT_PREFIX = "credit_"  # e.g. "credit_6x" means credit card in 6 installments
+ORDER_NOT_FOUND = "Order not found or the contact does not match the one registered for it."
+
 
 
 def read_table(name: str) -> pd.DataFrame:
@@ -169,3 +184,41 @@ def contact_matches_customer(order: pd.Series, contact: str) -> bool:
         return contact.casefold() == order["email"].casefold()
     contact_digits = _digits(contact)
     return contact_digits != "" and contact_digits == _digits(order["phone"])
+
+
+def _payment_label(payment_method: str) -> str:
+    """Translate a payment code into Portuguese, e.g. "credit_6x" -> "cartão de crédito em 6x"."""
+    if payment_method.startswith(CREDIT_PREFIX):
+        installments = payment_method.removeprefix(CREDIT_PREFIX).rstrip("x")
+        return f"cartão de crédito em {installments}x"
+    return PAYMENT_LABELS.get(payment_method, payment_method)
+
+
+def get_order_status(orders: pd.DataFrame, order_id: int, contact: str, reference_date: date) -> dict:
+    """Return the status of an order after checking the customer's contact (manual 9, LGPD)."""
+    matches = orders[orders["order_id"] == order_id]
+    # Same answer for an unknown order and a wrong contact, so order numbers cannot be guessed
+    if matches.empty or not contact_matches_customer(matches.iloc[0], contact):
+        return {"error": ORDER_NOT_FOUND}
+    order = matches.iloc[0]
+    has_delivery_date = not pd.isna(order["estimated_delivery"])
+
+    status = {
+        "order_id": int(order["order_id"]),
+        "customer_first_name": order["customer_name"].split()[0],
+        "status": ORDER_STATUS_LABELS.get(order["status"], order["status"]),
+        "order_date": order["order_date"].isoformat(),
+        "items": order["items"],
+        "total_brl": float(order["total_brl"]),
+        "payment": _payment_label(order["payment_method"]),
+        "tracking_code": None if pd.isna(order["tracking_code"]) else order["tracking_code"],
+        "estimated_delivery": order["estimated_delivery"].isoformat() if has_delivery_date else None,
+    }
+    if not pd.isna(order["notes"]):
+        status["notes"] = order["notes"]
+    if order["status"] == DELIVERED_STATUS:
+        # Assumption: the estimated delivery date is treated as the date the customer received it
+        received = order["estimated_delivery"]
+        status["return_window_open"] = is_within_return_window(received, reference_date)
+        status["defect_coverage"] = defect_coverage(order["order_date"], received, reference_date)
+    return status

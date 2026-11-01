@@ -1,12 +1,14 @@
 import pytest
 from datetime import date
 
+from business_rules import LEGAL_WARRANTY, MANUFACTURER_WARRANTY
 from tools import (
     AVAILABLE,
     COMING_SOON,
     DISCONTINUED,
     OUT_OF_STOCK,
     contact_matches_customer,
+    get_order_status,
     get_product_details,
     load_orders,
     load_products,
@@ -177,3 +179,45 @@ def test_contact_from_another_customer_does_not_match():
     assert contact_matches_customer(get_order_row(1), "") is False
 
 
+REFERENCE_DATE = date(2026, 3, 25)
+
+
+def test_order_status_delivered_includes_return_and_warranty_rights():
+    order = get_order_status(ORDERS, 5, "rafael.pereira@jmail.com", REFERENCE_DATE)
+    assert order["status"] == "entregue"
+    assert order["customer_first_name"] == "Rafael"
+    assert order["payment"] == "PIX"
+    assert order["return_window_open"] is False
+    assert order["defect_coverage"] == LEGAL_WARRANTY
+
+
+def test_order_status_old_delivery_is_manufacturer_warranty():
+    order = get_order_status(ORDERS, 1, "(67) 98432-1098", REFERENCE_DATE)
+    assert order["defect_coverage"] == MANUFACTURER_WARRANTY
+
+
+def test_order_status_shipped_has_tracking_and_no_return_rights():
+    order = get_order_status(ORDERS, 8, "anacarol.ferreira@coldmail.com", REFERENCE_DATE)
+    assert order["status"] == "enviado"
+    assert order["tracking_code"] == "BRJL5544332BR"
+    assert "return_window_open" not in order
+
+
+def test_order_status_pending_translates_credit_installments():
+    order = get_order_status(ORDERS, 15, "aline.monteiro@jmail.com", REFERENCE_DATE)
+    assert order["payment"] == "cartão de crédito em 12x"
+    assert order["tracking_code"] is None
+    assert len(order["items"]) == 2
+
+
+def test_order_status_cancelled_includes_notes():
+    order = get_order_status(ORDERS, 19, "pedro.oliveira@jmail.com", REFERENCE_DATE)
+    assert order["status"] == "cancelado"
+    assert order["notes"] == "Pagamento não confirmado dentro do prazo"
+
+
+def test_order_status_wrong_contact_and_unknown_order_give_same_error():
+    wrong_contact = get_order_status(ORDERS, 1, "isabela.moreira@jmail.com", REFERENCE_DATE)
+    unknown_order = get_order_status(ORDERS, 999, "pedro.oliveira@jmail.com", REFERENCE_DATE)
+    assert "error" in wrong_contact
+    assert wrong_contact == unknown_order
