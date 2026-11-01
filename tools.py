@@ -139,3 +139,33 @@ def get_product_details(products: pd.DataFrame, product_id: int) -> dict:
     details["can_combine_payments"] = can_combine_payments(price)
     details["specs"] = product["specs"]
     return details
+
+
+def load_orders() -> pd.DataFrame:
+    """Load orders joined with the customer's contact data and a readable list of items."""
+    orders = read_table("orders")
+    customers = read_table("customers").rename(columns={"name": "customer_name"})
+    items = read_table("order_items").merge(read_table("products")[["product_id", "name"]], on="product_id", how="left")
+
+    items["item"] = items["quantity"].astype(str) + "x " + items["name"]
+    items_by_order = items.groupby("order_id")["item"].apply(list).reset_index(name="items")
+
+    orders = orders.merge(customers[["customer_id", "customer_name", "email", "phone", "city"]], on="customer_id", how="left")
+    orders = orders.merge(items_by_order, on="order_id", how="left")
+    orders["order_date"] = pd.to_datetime(orders["order_date"]).dt.date
+    orders["estimated_delivery"] = pd.to_datetime(orders["estimated_delivery"]).dt.date
+    return orders
+
+
+def _digits(text: str) -> str:
+    """Keep only the digits of a text, e.g. "(67) 98432-1098" -> "67984321098"."""
+    return "".join(char for char in text if char.isdigit())
+
+
+def contact_matches_customer(order: pd.Series, contact: str) -> bool:
+    """Return True if the contact (e-mail or phone) is the one registered for the order."""
+    contact = contact.strip()
+    if "@" in contact:
+        return contact.casefold() == order["email"].casefold()
+    contact_digits = _digits(contact)
+    return contact_digits != "" and contact_digits == _digits(order["phone"])

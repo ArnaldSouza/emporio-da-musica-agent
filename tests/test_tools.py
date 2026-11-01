@@ -1,11 +1,14 @@
 import pytest
+from datetime import date
 
 from tools import (
     AVAILABLE,
     COMING_SOON,
     DISCONTINUED,
     OUT_OF_STOCK,
+    contact_matches_customer,
     get_product_details,
+    load_orders,
     load_products,
     normalize_text,
     product_availability,
@@ -141,3 +144,36 @@ def test_product_details_with_promotion_have_no_extra_pix_discount():
 
 def test_product_details_unknown_id_returns_error():
     assert "error" in get_product_details(PRODUCTS, 9999)
+
+
+ORDERS = load_orders()
+
+
+def get_order_row(order_id):
+    """Return one order row by id (test helper)."""
+    return ORDERS[ORDERS["order_id"] == order_id].iloc[0]
+
+
+def test_load_orders_joins_customer_and_items():
+    order = get_order_row(3)
+    assert order["customer_name"] == "Isabela Moreira Cunha"
+    assert order["items"] == ["2x Kala KA-ABP-CTG Barítono Cedar"]
+
+
+def test_load_orders_parses_dates():
+    assert get_order_row(1)["order_date"] == date(2025, 10, 15)
+
+
+def test_contact_matches_email_ignoring_case():
+    assert contact_matches_customer(get_order_row(1), "Pedro.Oliveira@JMAIL.com") is True
+
+
+def test_contact_matches_phone_in_any_format():
+    assert contact_matches_customer(get_order_row(1), "67 98432 1098") is True
+
+
+def test_contact_from_another_customer_does_not_match():
+    assert contact_matches_customer(get_order_row(1), "isabela.moreira@jmail.com") is False
+    assert contact_matches_customer(get_order_row(1), "") is False
+
+
