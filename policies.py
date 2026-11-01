@@ -13,6 +13,18 @@ CONTACT_FIXES = {
     "contato@empóriodamusica.com.br": "contato@emporiodamusica.com.br",
     "(67) 3321-4500": "(67) 3341-4444",
 }
+# Customer-facing topics mapped to manual sections. Sections 7 (internal service guidelines)
+# and 10 (final provisions) are for the team, not for customers
+POLICY_TOPICS = {
+    "about_store": 1,
+    "opening_hours": 2,
+    "payment": 3,
+    "returns_and_exchanges": 4,
+    "shipping": 5,
+    "promotions": 6,
+    "warranty": 8,
+    "privacy": 9,
+}
 
 
 def extract_manual_lines() -> list[str]:
@@ -47,3 +59,16 @@ def split_sections(lines: list[str]) -> dict[int, str]:
         if current:
             sections[current].append(line)
     return {number: "\n".join(section_lines) for number, section_lines in sections.items()}
+
+
+def load_policies() -> dict[str, str]:
+    """Return the manual text of each customer-facing policy topic."""
+    sections = split_sections(extract_manual_lines())
+    return {topic: sections[number] for topic, number in POLICY_TOPICS.items()}
+
+
+def get_store_policy(policies: dict[str, str], topic: str) -> dict:
+    """Return the manual section for a policy topic (the policy lookup tool)."""
+    if topic not in policies:
+        return {"error": f"Unknown topic: {topic}", "available_topics": list(policies)}
+    return {"topic": topic, "text": policies[topic]}

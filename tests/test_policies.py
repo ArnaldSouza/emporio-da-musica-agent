@@ -1,4 +1,4 @@
-from policies import extract_manual_lines, split_sections
+from policies import POLICY_TOPICS, extract_manual_lines, get_store_policy, load_policies, split_sections
 
 SECTIONS = split_sections(extract_manual_lines())
 
@@ -30,3 +30,23 @@ def test_contacts_are_standardized():
 
 def test_service_flow_steps_stay_in_section_seven():
     assert "Saudação" in SECTIONS[7]
+
+
+POLICIES = load_policies()
+
+
+def test_load_policies_has_only_customer_facing_topics():
+    assert list(POLICIES) == list(POLICY_TOPICS)
+    for text in POLICIES.values():
+        assert not text.startswith(("7.", "10."))
+
+
+def test_get_store_policy_returns_section_text():
+    assert "09:00 às 18:00" in get_store_policy(POLICIES, "opening_hours")["text"]
+    assert "PIX" in get_store_policy(POLICIES, "payment")["text"]
+
+
+def test_get_store_policy_unknown_topic_lists_available_topics():
+    result = get_store_policy(POLICIES, "recipes")
+    assert "error" in result
+    assert result["available_topics"] == list(POLICY_TOPICS)
