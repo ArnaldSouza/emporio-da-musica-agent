@@ -33,13 +33,19 @@ OPENING_HOURS = {
     5: (time(9), time(13)),
 }
 
+
+def _to_cents(value: Decimal) -> float:
+    """Round a money value to cents with commercial rounding (half up)."""
+    return float(value.quantize(CENTS, rounding=ROUND_HALF_UP))
+
+
 def apply_discount(price: float, discount_percent: float) -> float:
     """Return the price after a percentage discount, rounded to cents."""
     if not 0 <= discount_percent <= 100:
         raise ValueError(f"Invalid discount percent: {discount_percent}")
     # Decimal avoids float errors such as 599.90 * 0.95 = 569.9049999...
     discounted = Decimal(str(price)) * (100 - Decimal(str(discount_percent))) / 100
-    return float(discounted.quantize(CENTS, rounding=ROUND_HALF_UP))
+    return _to_cents(discounted)
 
 
 def pix_price(price: float, is_promotional: bool) -> float:
@@ -122,3 +128,10 @@ def is_store_open(moment: datetime) -> bool:
         return False
     opening, closing = hours
     return opening <= local_moment.time() < closing
+
+
+def installment_value(total: float, installments: int) -> float:
+    """Return the value of each installment, rounded to cents."""
+    if installments < 1:
+        raise ValueError(f"Invalid number of installments: {installments}")
+    return _to_cents(Decimal(str(total)) / installments)

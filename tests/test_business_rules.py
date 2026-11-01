@@ -17,11 +17,12 @@ from business_rules import (
     apply_discount,
     can_combine_payments,
     defect_coverage,
+    installment_value,
     is_store_open,
     is_within_return_window,
     max_installments,
     pix_price,
-    shipping_fee,
+    shipping_fee,    
 )
 
 REFERENCE_DATE = date(2026, 3, 25)
