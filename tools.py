@@ -1,11 +1,12 @@
 """Data access tools used by the agent: product catalog and orders."""
 
+import json
+from datetime import date
 import unicodedata
 from pathlib import Path
 
-import json
-from datetime import date
 import pandas as pd
+
 from business_rules import (
     METRO_CITY,
     apply_discount,
@@ -17,7 +18,6 @@ from business_rules import (
     pix_price,
     shipping_fee,
 )
-
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 CSV_PREFIX = "desafio_tecnico_ai_eng - "  # original file names are kept unchanged
@@ -42,7 +42,6 @@ ORDER_STATUS_LABELS = {
 PAYMENT_LABELS = {"pix": "PIX", "debit": "cartão de débito", "boleto": "boleto bancário"}
 CREDIT_PREFIX = "credit_"  # e.g. "credit_6x" means credit card in 6 installments
 ORDER_NOT_FOUND = "Order not found or the contact does not match the one registered for it."
-
 
 
 def read_table(name: str) -> pd.DataFrame:
@@ -122,9 +121,16 @@ def search_products(
     query: str = "",
     category: str = "",
     max_price: float | None = None,
-    only_available: bool = True,
+    only_available: bool | None = None,
+    only_promotions: bool = False,
 ) -> dict:
-    """Search the catalog by words in the name, category and maximum price, cheapest first."""
+    """Search the catalog by words in the name, category, maximum price and promotion, cheapest first.
+
+    By default a search by name also returns unavailable products, so the agent can say a product is
+    out of stock, coming soon or discontinued (manual 7.3); other searches list only available products.
+    """
+    if only_available is None:
+        only_available = not query
     results = products
     if category:
         results = results[results["category"].map(normalize_text) == normalize_text(category)]
@@ -132,6 +138,8 @@ def search_products(
         results = results[results["search_text"].str.contains(word, regex=False)]
     if only_available:
         results = results[results["availability"] == AVAILABLE]
+    if only_promotions:
+        results = results[results["discount_percent"] > 0]
 
     summaries = [_product_summary(product) for _, product in results.iterrows()]
     if max_price is not None:

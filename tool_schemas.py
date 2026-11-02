@@ -9,7 +9,6 @@ from tools import read_table
 
 CATEGORY_NAMES = read_table("categories")["name"].tolist()
 
-# Tool definitions in the OpenAI function calling format; the descriptions tell the model when to use each one
 TOOL_SCHEMAS = [
     {
         "type": "function",
@@ -17,7 +16,7 @@ TOOL_SCHEMAS = [
             "name": "search_products",
             "description": (
                 "Search the store catalog. Use it for any question about which instruments exist, "
-                "their price or availability. Never state a price or availability without calling a tool."
+                "their price, availability or promotions. Never state a price or availability without calling a tool."
             ),
             "parameters": {
                 "type": "object",
@@ -27,7 +26,14 @@ TOOL_SCHEMAS = [
                     "max_price": {"type": "number", "description": "Maximum price in BRL."},
                     "only_available": {
                         "type": "boolean",
-                        "description": "True (default) to list only products in stock.",
+                        "description": (
+                            "Default: false when searching by name (to also find unavailable products), "
+                            "true otherwise."
+                        ),
+                    },
+                    "only_promotions": {
+                        "type": "boolean",
+                        "description": "True to list only products with an active promotion.",
                     },
                 },
             },
@@ -38,7 +44,7 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "get_product_details",
             "description": (
-                "Get the price, PIX price, installments and specs of one product. "
+                "Get the price, PIX price, installments, Campo Grande shipping and specs of one product. "
                 "Use the product_id returned by search_products."
             ),
             "parameters": {

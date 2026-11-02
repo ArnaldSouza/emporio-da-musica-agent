@@ -1,5 +1,6 @@
-import pytest
 from datetime import date
+
+import pytest
 
 from business_rules import LEGAL_WARRANTY, MANUFACTURER_WARRANTY
 from tools import (
@@ -221,8 +222,20 @@ def test_order_status_wrong_contact_and_unknown_order_give_same_error():
     unknown_order = get_order_status(ORDERS, 999, "pedro.oliveira@jmail.com", REFERENCE_DATE)
     assert "error" in wrong_contact
     assert wrong_contact == unknown_order
-    
+
 
 def test_product_details_include_campo_grande_shipping():
     assert get_product_details(PRODUCTS, 95)["shipping_campo_grande_brl"] == 0.0
     assert get_product_details(PRODUCTS, 121)["shipping_campo_grande_brl"] == 35.0
+
+
+def test_search_by_name_also_finds_unavailable_products():
+    giannini = search_products(PRODUCTS, query="giannini gf-3d")["products"][0]
+    shelby = search_products(PRODUCTS, query="shelby sn-7c")["products"][0]
+    assert (giannini["product_id"], giannini["availability"]) == (96, OUT_OF_STOCK)
+    assert (shelby["product_id"], shelby["availability"]) == (113, DISCONTINUED)
+
+
+def test_search_only_promotions_lists_products_with_active_discount():
+    result = search_products(PRODUCTS, category="Violões", only_promotions=True)
+    assert sorted(found_ids(result)) == [90, 94]
