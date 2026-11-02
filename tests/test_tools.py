@@ -221,3 +221,8 @@ def test_order_status_wrong_contact_and_unknown_order_give_same_error():
     unknown_order = get_order_status(ORDERS, 999, "pedro.oliveira@jmail.com", REFERENCE_DATE)
     assert "error" in wrong_contact
     assert wrong_contact == unknown_order
+    
+
+def test_product_details_include_campo_grande_shipping():
+    assert get_product_details(PRODUCTS, 95)["shipping_campo_grande_brl"] == 0.0
+    assert get_product_details(PRODUCTS, 121)["shipping_campo_grande_brl"] == 35.0

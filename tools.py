@@ -7,6 +7,7 @@ import json
 from datetime import date
 import pandas as pd
 from business_rules import (
+    METRO_CITY,
     apply_discount,
     can_combine_payments,
     defect_coverage,
@@ -14,6 +15,7 @@ from business_rules import (
     is_within_return_window,
     max_installments,
     pix_price,
+    shipping_fee,
 )
 
 
@@ -152,6 +154,8 @@ def get_product_details(products: pd.DataFrame, product_id: int) -> dict:
     details["max_installments"] = installments
     details["installment_value_brl"] = installment_value(price, installments)
     details["can_combine_payments"] = can_combine_payments(price)
+    # Only Campo Grande has a fixed rule; other cities need a quote from the team (manual 5.2)
+    details["shipping_campo_grande_brl"] = shipping_fee(price, METRO_CITY)
     details["specs"] = product["specs"]
     return details
 
