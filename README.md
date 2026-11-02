@@ -36,11 +36,14 @@ Everything used here is free: no credit card, paid plan or expiring credits are 
 2. Create and activate a virtual environment, then install the dependencies:
 
    ```bash
-   python -m venv .venv
-   .venv\Scripts\activate        # Windows (PowerShell: .\.venv\Scripts\Activate.ps1)
+   python -m venv .venv           # Linux / macOS: python3 -m venv .venv
+   .\.venv\Scripts\Activate.ps1   # Windows PowerShell
+   .venv\Scripts\activate.bat      # Windows Command Prompt (cmd)
    source .venv/bin/activate      # Linux / macOS
    pip install -r requirements.txt
    ```
+
+   Run only the activation line for your terminal. If PowerShell blocks the script, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` first (it affects only the current window). After activating, the prompt starts with `(.venv)`.
 
 3. Create a free Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey). Creating a new project for the key is recommended, because free-tier limits are counted per project. **Do not enable billing**: the free tier is enough. At the time of writing, AI Studio showed these free limits for `gemini-3.5-flash-lite`: 15 requests per minute, 250,000 tokens per minute and 500 requests per day. Each customer message uses 2 or 3 requests.
 
@@ -51,6 +54,13 @@ Everything used here is free: no credit card, paid plan or expiring credits are 
    ```
 
    The `.env` file is listed in `.gitignore` and must never be committed.
+
+### Notes for Linux and macOS
+
+- If the `python` command is not found, use `python3` to create the virtual environment. After it is activated, `python` points to the environment's interpreter, so all other commands are the same.
+- On Debian or Ubuntu, if creating the environment fails with a message about `ensurepip`, install the venv module first: `sudo apt install python3-venv`.
+- To edit the `.env` file, use any editor, for example `nano .env`.
+- Verified on Ubuntu 24.04 with Python 3.12: clean clone, installation and the full test suite. The chat with the real model was tested on Windows.
 
 ### Run
 
@@ -472,4 +482,4 @@ I used **Claude** (Anthropic, through the claude.ai chat) as a pair-programming 
 4. **Testing the agent:** I ran the conversations against the real model on my machine and shared the transcripts. Besides the normal scenarios, I tested adversarial cases: questions unrelated to the store, an invented employee ("Aubrey") and a request for her phone number, an attempt to make the agent ignore its rules and give a 50% discount and a free instrument, an angry complaint, and requests for accessories the store does not sell. Each problem found was analyzed together and fixed, preferably in code; the table in 4.3 lists them.
 5. **Documentation:** I used the assistant to make writing the documentation easier. This README was drafted section by section, as decisions were made, and reviewed by me.
 
-Every suggestion was reviewed, tested and adjusted by me before being committed.
+Suggestions were not accepted blindly: the unit tests and my manual conversations caught problems that were fixed before each commit.
