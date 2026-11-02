@@ -1,9 +1,3 @@
-import pytest
-
-from datetime import date
-
-import pytest
-
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -17,12 +11,13 @@ from business_rules import (
     apply_discount,
     can_combine_payments,
     defect_coverage,
+    format_brl,
     installment_value,
     is_store_open,
     is_within_return_window,
     max_installments,
     pix_price,
-    shipping_fee,    
+    shipping_fee,
 )
 
 REFERENCE_DATE = date(2026, 3, 25)
@@ -167,3 +162,13 @@ def test_installment_value_rounds_half_up_to_cents():
 def test_installment_value_rejects_zero_installments():
     with pytest.raises(ValueError):
         installment_value(100.00, 0)
+
+
+def test_format_brl_uses_brazilian_separators():
+    assert format_brl(1967.18) == "R$ 1.967,18"
+    assert format_brl(11499) == "R$ 11.499,00"
+
+
+def test_format_brl_small_values_and_zero():
+    assert format_brl(35) == "R$ 35,00"
+    assert format_brl(0.0) == "R$ 0,00"

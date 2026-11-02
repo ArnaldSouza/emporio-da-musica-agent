@@ -7,6 +7,7 @@ from datetime import date, datetime
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from business_rules import format_brl
 from policies import get_store_policy, load_policies
 from prompts import STORE_PHONE, build_system_prompt
 from tool_schemas import TOOL_SCHEMAS
@@ -16,6 +17,7 @@ load_dotenv()  # reads the .env file once, when the module is imported
 
 DEFAULT_REFERENCE_DATE = "2026-03-25"  # Assumption: end of the data snapshot
 MAX_TOOL_ROUNDS = 5  # stops a model that keeps calling tools without ever answering
+MONEY_SUFFIX = "_brl"  # tool result fields with this suffix hold money values
 FALLBACK_REPLY = (
     "Desculpe, não consegui concluir sua solicitação agora. "
     f"Nossa equipe pode ajudar pelo WhatsApp {STORE_PHONE}."
@@ -40,7 +42,7 @@ def load_reference_date() -> date:
     except ValueError:
         raise RuntimeError(f"REFERENCE_DATE must use the YYYY-MM-DD format, got: {value!r}") from None
 
-   
+
 def load_store() -> dict:
     """Load once everything the tools need: catalog, orders, policies and the reference date."""
     return {
@@ -49,6 +51,24 @@ def load_store() -> dict:
         "policies": load_policies(),
         "reference_date": load_reference_date(),
     }
+
+
+def format_money_fields(value):
+    """Return a copy of a tool result where every money field (*_brl) is Brazilian currency text.
+
+    The model then copies prices exactly as written, instead of converting numbers itself.
+    """
+    if isinstance(value, list):
+        return [format_money_fields(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    formatted = {}
+    for key, item in value.items():
+        if key.endswith(MONEY_SUFFIX) and isinstance(item, (int, float)):
+            formatted[key] = format_brl(item)
+        else:
+            formatted[key] = format_money_fields(item)
+    return formatted
 
 
 def run_tool(name: str, arguments: str, store: dict) -> str:
@@ -68,7 +88,7 @@ def run_tool(name: str, arguments: str, store: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         # Malformed JSON or unexpected argument names: tell the model instead of crashing
         result = {"error": f"Invalid arguments for tool {name}: {arguments}"}
-    return json.dumps(result, ensure_ascii=False)
+    return json.dumps(format_money_fields(result), ensure_ascii=False)
 
 
 def answer(client: OpenAI, model: str, history: list[dict], store: dict, now: datetime) -> str:

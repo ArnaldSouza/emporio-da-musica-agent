@@ -135,3 +135,10 @@ def installment_value(total: float, installments: int) -> float:
     if installments < 1:
         raise ValueError(f"Invalid number of installments: {installments}")
     return _to_cents(Decimal(str(total)) / installments)
+
+
+def format_brl(value: float) -> str:
+    """Format a money value as Brazilian currency text, e.g. 1967.18 -> "R$ 1.967,18"."""
+    us_format = f"{Decimal(str(value)).quantize(CENTS, rounding=ROUND_HALF_UP):,.2f}"  # "1,967.18"
+    # Swap the separators to the Brazilian style: "." for thousands and "," for cents
+    return "R$ " + us_format.replace(",", "_").replace(".", ",").replace("_", ".")

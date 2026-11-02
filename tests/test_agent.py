@@ -6,7 +6,16 @@ import pytest
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
-from agent import FALLBACK_REPLY, MAX_TOOL_ROUNDS, answer, create_llm_client, load_reference_date, load_store, run_tool
+from agent import (
+    FALLBACK_REPLY,
+    MAX_TOOL_ROUNDS,
+    answer,
+    create_llm_client,
+    format_money_fields,
+    load_reference_date,
+    load_store,
+    run_tool,
+)
 from business_rules import CAMPO_GRANDE_TZ
 from policies import POLICY_TOPICS
 from tool_schemas import TOOL_SCHEMAS
@@ -36,8 +45,8 @@ def test_reference_date_with_invalid_format_raises_clear_error(monkeypatch):
     monkeypatch.setenv("REFERENCE_DATE", "25/03/2026")
     with pytest.raises(RuntimeError):
         load_reference_date()
-        
-        
+
+
 STORE = load_store()
 
 
@@ -80,8 +89,23 @@ def test_run_tool_unknown_tool_returns_error():
 def test_run_tool_invalid_arguments_return_error():
     assert "error" in json.loads(run_tool("search_products", "not json", STORE))
     assert "error" in json.loads(run_tool("get_product_details", '{"id": 95}', STORE))
-    
-    
+
+
+def test_format_money_fields_formats_only_money_values_at_any_depth():
+    result = {"total_found": 1, "products": [{"price_brl": 1967.18, "discount_percent": 18, "name": "Crafter"}]}
+    formatted = format_money_fields(result)
+    assert formatted["products"][0]["price_brl"] == "R$ 1.967,18"
+    assert formatted["products"][0]["discount_percent"] == 18
+    assert formatted["total_found"] == 1
+
+
+def test_run_tool_sends_prices_as_brazilian_currency_text():
+    result = json.loads(run_tool("get_product_details", '{"product_id": 95}', STORE))
+    assert result["price_brl"] == "R$ 2.199,00"
+    assert result["pix_price_brl"] == "R$ 2.089,05"
+    assert result["shipping_campo_grande_brl"] == "R$ 0,00"
+
+
 NOW = datetime(2026, 3, 25, 10, 0, tzinfo=CAMPO_GRANDE_TZ)
 
 
