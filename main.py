@@ -1,8 +1,10 @@
 """Command-line chat with Clave, the Empório da Música virtual assistant.
 
-Run: python main.py
+Run: python main.py               (normal chat)
+     python main.py --show-tools  (also prints which tools the agent called on each turn)
 """
 
+import sys
 from datetime import datetime
 
 from openai import APIError
@@ -12,6 +14,7 @@ from business_rules import CAMPO_GRANDE_TZ
 
 MAX_HISTORY_MESSAGES = 20  # keeps requests small; older messages are dropped
 EXIT_COMMANDS = {"sair", "exit", "quit"}
+SHOW_TOOLS_FLAG = "--show-tools"
 GREETING = "Olá! Eu sou a Clave, assistente virtual da Empório da Música. Como posso ajudar?"
 ERROR_REPLY = "Tive um problema técnico para responder agora. Pode tentar de novo em instantes?"
 GOODBYE = "Até mais! Obrigada por falar com a Empório da Música."
@@ -31,7 +34,17 @@ def trim_history(history: list[dict]) -> list[dict]:
     return history[start:]
 
 
-def main() -> None:
+def describe_tool_calls(messages: list[dict]) -> list[str]:
+    """Return one readable line per tool call found in the messages of a turn."""
+    lines = []
+    for message in messages:
+        for tool_call in message.get("tool_calls", []):
+            function = tool_call["function"]
+            lines.append(f"[tool] {function['name']} {function['arguments']}")
+    return lines
+
+
+def main(show_tools: bool = False) -> None:
     """Run the customer service chat in the terminal."""
     try:
         client, model = create_llm_client()
@@ -61,6 +74,9 @@ def main() -> None:
             del history[turn_start:]
             print(f"\nClave: {ERROR_REPLY}  [{error.__class__.__name__}]")
             continue
+        if show_tools:
+            for line in describe_tool_calls(history[turn_start:]):
+                print(f"  {line}")
         print(f"\nClave: {reply}")
         history = trim_history(history)
 
@@ -68,4 +84,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(show_tools=SHOW_TOOLS_FLAG in sys.argv[1:])
