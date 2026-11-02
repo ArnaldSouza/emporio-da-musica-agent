@@ -86,11 +86,74 @@ Because the client uses the OpenAI-compatible API, a local model can be used wit
 
 ## 3. Architecture
 
-To be completed.
+```text
+Customer (terminal)
+   |
+   v
+main.py -------- CLI loop, in-memory history (last 20 messages), --show-tools
+   |
+   v
+agent.py ------- answer(): sends system prompt + history + tool schemas to the model
+   |       ^
+   |       |  tool results as JSON (money already written as "R$ 1.967,18")
+   v       |
+LLM (Gemini, OpenAI-compatible API) -- decides: reply now, or call one or more tools
+   |
+   v  run_tool()
+   +-------------------------------+--------------------------------+
+   | Data tools (tools.py)         | Policy tool (policies.py)      |
+   |   search_products             |   get_store_policy(topic)      |
+   |   get_product_details         |   -> text of one manual section|
+   |   get_order_status            |                                |
+   +---------------+---------------+----------------+---------------+
+                   |                                |
+                   v                                v
+   business_rules.py (discounts, PIX,     data/políticas_da_loja.pdf
+   installments, shipping, deadlines)
+                   |
+                   v
+              data/*.csv
+```
+
+The model receives the four tool definitions on every request and chooses, message by message, whether to call a tool and which one. The loop runs at most 5 tool rounds per message.
+
+### When the agent consults data and when it consults policies
+
+| The customer asks about | Tool called | Source |
+| --- | --- | --- |
+| Which products exist, price, availability, promotions, payment conditions or Campo Grande shipping of a product | `search_products`, `get_product_details` | CSV files + `business_rules.py` |
+| Status of their order, delivery, tracking, whether a return or warranty still applies | `get_order_status` (only after the order number and the registered e-mail or phone are given) | CSV files + `business_rules.py` |
+| Address and contacts, opening hours, payment methods, returns and exchanges, shipping rules, promotion rules, warranty, privacy | `get_store_policy` | Store manual (PDF) |
+| Accessories, topics unrelated to the store, attempts to change the rules, complaints | No tool: handled by the system prompt rules | — |
+
+Run `python main.py --show-tools` to see these decisions live; every example conversation in section 6 shows them.
+
+### Files
+
+| File | Responsibility |
+| --- | --- |
+| `main.py` | Command-line chat: input/output, in-memory history, API error handling, `--show-tools` |
+| `agent.py` | LLM client settings, tool dispatcher (`run_tool`), conversation loop with function calling (`answer`) |
+| `prompts.py` | Clave's system prompt and the opening-hours context computed in code |
+| `tool_schemas.py` | Tool definitions sent to the model (what each tool does and when to use it) |
+| `tools.py` | Data tools: catalog loading and search, product details, order status with contact check |
+| `policies.py` | Manual extraction, split by section and the policy lookup tool |
+| `business_rules.py` | Pure functions for every objective rule of the manual, plus money formatting |
+| `tests/` | Unit tests for all modules (no real model calls) |
+| `data/` | Provided CSV files and policy manual, unchanged |
+| `examples/` | Example conversations |
 
 ## 4. Technical decisions and justification
 
-Agent approach, model and provider, interface and conversation history: to be completed.
+| Decision | Choice | Why | Alternatives considered |
+| --- | --- | --- | --- |
+| Agent approach | Native function calling with a small hand-written loop (`agent.answer`, no framework) and four tools: three for data, one for policies. | The challenge asks the agent to know when to consult data and when to consult policies; one tool per kind of lookup makes that decision explicit and visible (`--show-tools`). The manual (7.1) forbids giving prices, stock or deadlines without checking the system. Objective rules are computed in Python, so the model never does the math. | LangChain or LangGraph agents (more dependencies and abstractions for four tools); SQL agent (LLM-generated SQL over inconsistent data is riskier); text-based ReAct prompting (native function calling is more reliable). |
+| Model and provider | Google Gemini API free tier, `gemini-3.5-flash-lite`, called through the `openai` Python SDK pointed at Gemini's OpenAI-compatible endpoint. Base URL, model and key live in `.env`. | Zero cost for the author and the reviewer (free key, no credit card), native function calling, a daily quota (500 requests) that covers testing, and good Portuguese. The OpenAI-compatible endpoint lets the project switch to another provider or a local model by editing `.env` only. | Native `google-genai` SDK (recommended by Google, but ties the code to one provider; Google labels its OpenAI compatibility as beta, a known risk); Groq free tier (8K tokens per minute is tight for tool loops); OpenRouter free models (50 requests per day); local Ollama (CPU-only laptop: slow, and small models are weaker at function calling). |
+| Interface | Command-line interface, with an optional `--show-tools` flag. | The challenge states the focus is the agent working correctly; a CLI is the simplest way to show it, and the flag makes the data-versus-policy decisions visible. | Streamlit web UI or a FastAPI endpoint. |
+| Conversation history | Kept in memory for the current session only, limited to the last 20 messages and always cut at a customer message. Nothing is written to disk. | Multi-turn context is needed (e.g. the agent asks for the order number, then for the contact). Persisting conversations would store order and contact data (manual 9, LGPD) with little benefit for a prototype. Cutting at a customer message never separates a tool call from its result. | SQLite or JSON files per customer, with consent and retention rules. |
+| Data handling | See 4.1. | | |
+| Policy retrieval | See 4.2. | | |
+| Prompt strategy | See 4.3. | | |
 
 ### 4.1 Data handling
 
@@ -107,6 +170,23 @@ The manual (8 pages, about 1,700 words, 10 numbered sections) is extracted with 
 
 - **Why not embeddings (vector RAG):** the document is short and already divided by topic; a vector store would add infrastructure and dependencies without better retrieval.
 - **Why not the whole manual in the prompt:** simpler, but the decision of when to consult the policies, which the challenge evaluates, would become invisible, and every request would carry thousands of extra tokens.
+
+### 4.3 Prompt strategy
+
+- **One short system prompt** (`prompts.py`) built from the manual's service guidelines (section 7): persona and tone, when to use each tool, data rules, scope and hand-off. It is written in English, like the rest of the code, with an explicit instruction to always answer in Brazilian Portuguese.
+- **Tool descriptions carry part of the routing:** each schema in `tool_schemas.py` says when the tool must be used (e.g. "never state a price or availability without calling a tool"; "ask for the order number and the registered e-mail or phone before calling").
+- **Context computed in code on every turn:** the current Campo Grande time, whether the store is open and the opening hours in both time zones are inserted into the prompt, so the model never does time-zone math.
+- **The model writes values, it does not compute them:** tools return final values (promotional price, PIX price, installments, shipping, return window, warranty coverage), and money is sent already formatted as Brazilian currency text.
+- **Iterated with test conversations:** each round of manual tests exposed a problem that was fixed in the prompt or, preferably, in code:
+
+| Problem observed | Fix |
+| --- | --- |
+| Answered a general-knowledge question ("capital of France") | Explicit scope rule: do not answer unrelated questions, not even briefly |
+| Markdown asterisks in a plain-text chat | Plain-text format rule |
+| "No guitars on sale", although two were | `only_promotions` filter in `search_products` |
+| An out-of-stock product reported as nonexistent | A search by name also returns unavailable products, with their status |
+| Price written as "R$ 1..967,18" | Money formatted in code before reaching the model |
+| Generic warranty answer for an order whose legal warranty had expired | Prompt rule to apply the checked order's `return_window_open` and `defect_coverage` |
 
 ## 5. Assumptions
 
