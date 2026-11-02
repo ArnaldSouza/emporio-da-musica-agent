@@ -1,10 +1,13 @@
 import json
-from datetime import date
+from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 from openai import OpenAI
+from openai.types.chat import ChatCompletion
 
-from agent import create_llm_client, load_reference_date, load_store, run_tool
+from agent import FALLBACK_REPLY, MAX_TOOL_ROUNDS, answer, create_llm_client, load_reference_date, load_store, run_tool
+from business_rules import CAMPO_GRANDE_TZ
 from policies import POLICY_TOPICS
 from tool_schemas import TOOL_SCHEMAS
 
@@ -77,3 +80,62 @@ def test_run_tool_unknown_tool_returns_error():
 def test_run_tool_invalid_arguments_return_error():
     assert "error" in json.loads(run_tool("search_products", "not json", STORE))
     assert "error" in json.loads(run_tool("get_product_details", '{"id": 95}', STORE))
+    
+    
+NOW = datetime(2026, 3, 25, 10, 0, tzinfo=CAMPO_GRANDE_TZ)
+
+
+def make_completion(content=None, tool_calls=None):
+    """Build a fake model response in the real OpenAI format (test helper)."""
+    message = {"role": "assistant", "content": content}
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+    return ChatCompletion.model_validate({
+        "id": "test",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "test-model",
+        "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+    })
+
+
+def make_tool_call(name, arguments):
+    """Build a fake tool call requested by the model (test helper)."""
+    return {"id": "call_1", "type": "function", "function": {"name": name, "arguments": arguments}}
+
+
+def make_fake_client(responses, sent_requests):
+    """Return a fake client that answers with the given responses and records each request."""
+    def create(**request):
+        sent_requests.append(request)
+        return responses.pop(0)
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+
+def test_answer_returns_direct_reply_and_updates_history():
+    sent = []
+    client = make_fake_client([make_completion("Olá! Como posso ajudar?")], sent)
+    history = [{"role": "user", "content": "Oi"}]
+    assert answer(client, "test-model", history, STORE, NOW) == "Olá! Como posso ajudar?"
+    assert history[-1] == {"role": "assistant", "content": "Olá! Como posso ajudar?"}
+    assert sent[0]["messages"][0]["role"] == "system"
+    assert sent[0]["tools"] == TOOL_SCHEMAS
+
+
+def test_answer_runs_requested_tool_and_sends_result_back():
+    sent = []
+    tool_call = make_tool_call("get_store_policy", '{"topic": "opening_hours"}')
+    responses = [make_completion(tool_calls=[tool_call]), make_completion("Abrimos às 9h.")]
+    history = [{"role": "user", "content": "Que horas vocês abrem?"}]
+    reply = answer(make_fake_client(responses, sent), "test-model", history, STORE, NOW)
+    assert reply == "Abrimos às 9h."
+    tool_message = next(message for message in history if message["role"] == "tool")
+    assert "09:00 às 18:00" in tool_message["content"]
+    assert len(sent) == 2  # one request to choose the tool, one to write the reply
+
+
+def test_answer_gives_fallback_when_model_never_stops_calling_tools():
+    tool_call = make_tool_call("get_store_policy", '{"topic": "opening_hours"}')
+    responses = [make_completion(tool_calls=[tool_call]) for _ in range(MAX_TOOL_ROUNDS)]
+    history = [{"role": "user", "content": "Oi"}]
+    assert answer(make_fake_client(responses, []), "test-model", history, STORE, NOW) == FALLBACK_REPLY
