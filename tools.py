@@ -1,8 +1,8 @@
 """Data access tools used by the agent: product catalog and orders."""
 
 import json
-from datetime import date
 import unicodedata
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
