@@ -6,11 +6,83 @@ Prototype of a text-message customer service agent for **Empório da Música**, 
 
 ## 1. Overview
 
-To be completed.
+**Clave** is the virtual assistant of Empório da Música. It answers customer text messages in Brazilian Portuguese with the tone the store manual asks for (section 7.1): informal but professional, "like talking to a friend who understands music".
+
+For each message, the agent decides by itself what it needs to look up:
+
+- **Store data** (CSV files): product search, price, availability, active promotions, payment conditions and order status.
+- **Store policies** (internal manual): address and contacts, opening hours, payment methods, returns and exchanges, shipping, promotion rules, warranty and privacy.
+
+Values with an objective rule in the manual (PIX discount, promotional price, installments, Campo Grande shipping, return and warranty periods, opening hours) are computed in Python and only written by the model, never calculated by it.
+
+**Scope.** The store sells musical instruments only (manual 1 and 7.1). Requests for accessories are politely declined, questions unrelated to the store are not answered, and anything the agent cannot do (complaints, shipping quotes outside Campo Grande, special requests) is handed off to the human team with the official contacts.
 
 ## 2. How to run
 
-To be completed.
+Everything used here is free: no credit card, paid plan or expiring credits are needed.
+
+### Requirements
+
+- Python 3.11 or newer (developed and tested with Python 3.12 on Windows).
+- A Google account, to create a free Gemini API key.
+
+### Setup
+
+1. Clone the repository and enter the folder:
+
+   ```bash
+   git clone https://github.com/ArnaldSouza/emporio-da-musica-agent.git
+   cd emporio-da-musica-agent
+   ```
+
+2. Create and activate a virtual environment, then install the dependencies:
+
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate        # Windows (PowerShell: .\.venv\Scripts\Activate.ps1)
+   source .venv/bin/activate      # Linux / macOS
+   pip install -r requirements.txt
+   ```
+
+3. Create a free Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey). Creating a new project for the key is recommended, because free-tier limits are counted per project. **Do not enable billing**: the free tier is enough. At the time of writing, AI Studio showed these free limits for `gemini-3.5-flash-lite`: 15 requests per minute, 250,000 tokens per minute and 500 requests per day. Each customer message uses 2 or 3 requests.
+
+4. Copy `.env.example` to `.env` and paste your key into `LLM_API_KEY`:
+
+   ```bash
+   cp .env.example .env           # Windows PowerShell: Copy-Item .env.example .env
+   ```
+
+   The `.env` file is listed in `.gitignore` and must never be committed.
+
+### Run
+
+```bash
+python main.py                 # chat with Clave in the terminal
+python main.py --show-tools    # also shows which tools the agent called on each turn
+```
+
+Type `sair` (or press Ctrl+C) to end the conversation.
+
+### Tests
+
+```bash
+python -m pytest
+```
+
+The tests cover the business rules, the data and policy tools, the prompt and the conversation loop (with a fake model client). They never call the real model, so they use no API quota.
+
+### Configuration (`.env`)
+
+| Variable | Purpose | Default in `.env.example` |
+| --- | --- | --- |
+| `LLM_API_KEY` | API key of the model provider | (your key) |
+| `LLM_BASE_URL` | Any OpenAI-compatible endpoint | Gemini OpenAI-compatible endpoint |
+| `LLM_MODEL` | Model name | `gemini-3.5-flash-lite` |
+| `REFERENCE_DATE` | Date treated as "today" by order rules (see Assumptions) | `2026-03-25` |
+
+### Alternative: local model with Ollama (not tested)
+
+Because the client uses the OpenAI-compatible API, a local model can be used without code changes: install [Ollama](https://ollama.com), download a model with tool-calling support, and set `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_MODEL` to the model name and `LLM_API_KEY` to any non-empty value. This path was not tested: on the author's laptop (16 GB RAM, integrated GPU, so CPU-only inference) responses would be slow, and small local models are less reliable at function calling.
 
 ## 3. Architecture
 
